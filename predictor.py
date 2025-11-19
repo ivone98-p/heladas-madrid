@@ -8,7 +8,7 @@ import numpy as np
 import folium
 from streamlit_folium import st_folium
 from datetime import datetime
-from predictor import PredictorHeladas
+
 
 # Configuración
 st.set_page_config(
@@ -194,3 +194,4 @@ st.info("📍 Este sistema utiliza modelos de Machine Learning entrenados con da
 # Footer
 st.caption(f"🕐 Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 st.caption("💡 Presiona '🔄 Actualizar Predicción' en la barra lateral para recalcular")
+
