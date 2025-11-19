@@ -1,4 +1,4 @@
- ============================================================
+# ============================================================
 #  MÓDULO DE PREDICCIÓN PARA STREAMLIT
 # ============================================================
 
@@ -339,4 +339,5 @@ class PredictorHeladas:
             "temp_maxima": float(self.df[self.target].max()),
             "heladas_totales": int(heladas_totales),
             "porcentaje_heladas": float(heladas_totales / len(self.df) * 100)
+
         }
