@@ -92,8 +92,6 @@ else:
             riesgo = resultado['riesgo']
             color_riesgo = resultado['emoji_riesgo']
             color_mapa = resultado['color_mapa']
-            
-            st.success(f"✅ Predicción generada para **{resultado['fecha_prediccion']}**")
 
 # ============================================================
 # MÉTRICAS PRINCIPALES (SOLO MAÑANA)
