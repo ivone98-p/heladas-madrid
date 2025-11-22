@@ -8,6 +8,16 @@ import numpy as np
 import folium
 from streamlit_folium import st_folium
 from datetime import datetime, timedelta
+import locale
+
+# Configurar locale para español
+try:
+    locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
+except:
+    try:
+        locale.setlocale(locale.LC_TIME, 'es_ES')
+    except:
+        pass  # Si no funciona, continuará en inglés
 
 # Configuración
 st.set_page_config(
@@ -106,8 +116,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.metric(
         "🌡️ Temperatura Predicha", 
-        f"{temp_predicha:.1f}°C",
-        delta=f"{resultado['cambio_esperado']:.1f}°C" if resultado and 'cambio_esperado' in resultado else None
+        f"{temp_predicha:.1f}°C"
     )
 
 with col2:
@@ -121,7 +130,18 @@ with col3:
 # ============================================================
 st.markdown("---")
 if resultado:
-    fecha_prediccion_str = resultado['fecha_prediccion'].strftime('%d de %B de %Y')
+    # Convertir mes a español manualmente
+    meses_es = {
+        1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+        5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+        9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+    }
+    
+    fecha_pred = resultado['fecha_prediccion']
+    dia = fecha_pred.day
+    mes = meses_es[fecha_pred.month]
+    anio = fecha_pred.year
+    fecha_prediccion_str = f"{dia} de {mes} de {anio}"
     
     if temp_predicha <= 0:
         st.error(f"⚠️ **ALERTA DE HELADA**: Se espera temperatura bajo 0°C el **{fecha_prediccion_str}**")
