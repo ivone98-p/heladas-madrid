@@ -1,5 +1,5 @@
 #============================================================
-#  MÓDULO DE PREDICCIÓN CON SIMULACIÓN Y 7 DÍAS
+#  MÓDULO DE PREDICCIÓN SIMPLIFICADO
 # ============================================================
 
 import pandas as pd
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 class PredictorHeladas:
     """
     Clase que maneja las predicciones de temperatura y heladas
-    Con capacidad de simular datos faltantes y predecir hasta 7 días
+    Con capacidad de simular datos faltantes hasta hoy
     """
     
     def __init__(self, data_path='Datos'):
@@ -42,9 +42,8 @@ class PredictorHeladas:
         # Cargar datos
         self._cargar_datos()
         
-        # Variables para cachear predicciones
+        # Variable para cachear predicción
         self._ultima_prediccion = None
-        self._predicciones_7dias = None
     
     def _cargar_modelos(self):
         """Carga todos los modelos entrenados"""
@@ -86,6 +85,12 @@ class PredictorHeladas:
         """
         Simula datos faltantes desde la última fecha del CSV hasta fecha_hasta
         usando promedios históricos del mismo mes/día
+        
+        Args:
+            fecha_hasta: datetime hasta donde extender
+            
+        Returns:
+            DataFrame extendido
         """
         df_extendido = self.df.copy()
         ultima_fecha = df_extendido['Fecha'].max()
@@ -276,134 +281,17 @@ class PredictorHeladas:
         
         return df_out
     
-    def _predecir_un_dia(self, df_hasta_fecha):
-        """
-        Predice UN día usando el dataframe completo hasta cierta fecha
-        
-        Returns:
-            (temperatura, probabilidad_helada, score_helada)
-        """
-        # TEMPERATURA
-        df_temp = df_hasta_fecha[['Fecha', self.target]].copy()
-        df_temp = df_temp.dropna(subset=[self.target])
-        df_temp = self._crear_features_temperatura(df_temp)
-        df_temp = df_temp.dropna().reset_index(drop=True)
-        
-        if len(df_temp) == 0:
-            return None, None, None
-        
-        ultima_fila = df_temp.iloc[[-1]]
-        X_temp = ultima_fila[self.features_temp]
-        X_temp_scaled = self.scaler_temp.transform(X_temp)
-        temp_predicha = self.modelo_temp.predict(X_temp_scaled)[0]
-        
-        # HELADA
-        df_helada = df_hasta_fecha[['Fecha', self.target] + self.columnas_prec + self.columnas_tmax].copy()
-        df_helada = df_helada.dropna(subset=[self.target])
-        
-        for col in self.columnas_prec + self.columnas_tmax:
-            if df_helada[col].isna().any():
-                df_helada[col].fillna(df_helada[col].mean(), inplace=True)
-        
-        df_helada = self._crear_features_helada(df_helada)
-        df_helada = df_helada.dropna().reset_index(drop=True)
-        
-        if len(df_helada) == 0:
-            return temp_predicha, None, None
-        
-        ultima_fila_helada = df_helada.iloc[[-1]]
-        X_helada = ultima_fila_helada[self.features_helada]
-        X_helada_scaled = self.scaler_helada.transform(X_helada)
-        score_helada = self.modelo_helada.decision_function(X_helada_scaled)[0]
-        prob_helada = (1 / (1 + np.exp(-score_helada))) * 100
-        
-        return temp_predicha, prob_helada, score_helada
-    
-    def predecir_7_dias(self, fecha_inicio=None, forzar_recalculo=False):
-        """
-        Predice los próximos 7 días de forma RECURSIVA
-        """
-        if self._predicciones_7dias and not forzar_recalculo:
-            print("📌 Usando predicciones 7 días cacheadas")
-            return self._predicciones_7dias
-        
-        try:
-            # Fecha base
-            if fecha_inicio is None:
-                fecha_inicio = pd.Timestamp.now().normalize()
-            else:
-                fecha_inicio = pd.to_datetime(fecha_inicio).normalize()
-            
-            # Simular datos hasta HOY
-            df_completo = self._simular_datos_faltantes(fecha_inicio)
-            
-            predicciones = []
-            
-            print(f"🔮 Predicción recursiva para 7 días desde {fecha_inicio.date()}")
-            
-            for dia in range(1, 8):
-                fecha_prediccion = fecha_inicio + pd.Timedelta(days=dia)
-                
-                # Datos hasta el día anterior
-                df_hasta = df_completo[df_completo['Fecha'] <= fecha_inicio + pd.Timedelta(days=dia-1)].copy()
-                
-                # Predecir
-                temp_pred, prob_helada, score = self._predecir_un_dia(df_hasta)
-                
-                if temp_pred is None:
-                    continue
-                
-                # Determinar riesgo
-                if temp_pred <= -2:
-                    riesgo, emoji, color = "MUY ALTO", "🔴", "red"
-                elif temp_pred <= 0:
-                    riesgo, emoji, color = "ALTO", "🟠", "orange"
-                elif temp_pred <= 2:
-                    riesgo, emoji, color = "MEDIO", "🟡", "yellow"
-                elif temp_pred <= 4:
-                    riesgo, emoji, color = "BAJO", "🟢", "green"
-                else:
-                    riesgo, emoji, color = "MUY BAJO", "🟢", "green"
-                
-                predicciones.append({
-                    'dia': dia,
-                    'fecha': fecha_prediccion.date(),
-                    'temperatura': float(temp_pred),
-                    'probabilidad_helada': float(prob_helada) if prob_helada else 0,
-                    'riesgo': riesgo,
-                    'emoji': emoji,
-                    'color': color
-                })
-                
-                # RECURSIVO: Agregar predicción al dataset para siguiente día
-                nueva_fila = {'Fecha': fecha_prediccion, self.target: temp_pred}
-                
-                # Simular PREC y TMax con promedios
-                mes = fecha_prediccion.month
-                for col in self.columnas_prec:
-                    nueva_fila[col] = df_completo[df_completo['Fecha'].dt.month == mes][col].mean()
-                for col in self.columnas_tmax:
-                    nueva_fila[col] = df_completo[df_completo['Fecha'].dt.month == mes][col].mean()
-                
-                df_completo = pd.concat([df_completo, pd.DataFrame([nueva_fila])], ignore_index=True)
-                df_completo = df_completo.sort_values('Fecha').reset_index(drop=True)
-            
-            self._predicciones_7dias = predicciones
-            
-            print(f"✅ {len(predicciones)} días predichos correctamente")
-            
-            return predicciones
-            
-        except Exception as e:
-            print(f"❌ Error en predicción multi-día: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
-    
     def predecir(self, fecha_consulta=None, forzar_recalculo=False):
         """
         Realiza predicción para el día siguiente usando Machine Learning
-        Ahora TAMBIÉN genera predicciones de 7 días
+        Simula automáticamente datos faltantes hasta hoy
+        
+        Args:
+            fecha_consulta: datetime o None (usa fecha actual)
+            forzar_recalculo: bool, si True recalcula aunque haya caché
+            
+        Returns:
+            dict con temperatura, probabilidad, riesgo, etc.
         """
         # Si ya hay predicción cacheada y no se fuerza recálculo
         if self._ultima_prediccion and not forzar_recalculo:
@@ -512,17 +400,9 @@ class PredictorHeladas:
             temp_minima_7d = df_hasta_hoy[self.target].iloc[-7:].min()
             temp_maxima_7d = df_hasta_hoy[self.target].iloc[-7:].max()
             
-            # Historial últimos 30 días
-            historial_30d = df_hasta_hoy[['Fecha', self.target]].tail(30)
-            
             # Detectar si se usaron datos simulados
             ultima_fecha_real = self.df['Fecha'].max()
             datos_simulados = fecha_consulta > ultima_fecha_real
-            
-            # ============================================
-            # GENERAR PREDICCIONES DE 7 DÍAS
-            # ============================================
-            predicciones_7dias = self.predecir_7_dias(fecha_consulta, forzar_recalculo)
             
             # Resultado
             resultado = {
@@ -539,12 +419,10 @@ class PredictorHeladas:
                 "temp_minima_7d": float(temp_minima_7d),
                 "temp_maxima_7d": float(temp_maxima_7d),
                 "cambio_esperado": float(temp_predicha - temp_ayer),
-                "historial_30d": historial_30d,
                 "timestamp": datetime.now(),
                 "registros_usados": len(df_hasta_hoy),
                 "datos_simulados": datos_simulados,
-                "ultima_fecha_real": ultima_fecha_real.date(),
-                "predicciones_7dias": predicciones_7dias  # NUEVO: agregar predicciones de 7 días
+                "ultima_fecha_real": ultima_fecha_real.date()
             }
             
             # Cachear predicción
@@ -561,10 +439,6 @@ class PredictorHeladas:
             import traceback
             traceback.print_exc()
             return {"error": str(e)}
-    
-    def obtener_historial(self, dias=30):
-        """Obtiene historial de temperatura"""
-        return self.df[['Fecha', self.target]].tail(dias)
     
     def estadisticas_generales(self):
         """Retorna estadísticas del dataset completo"""
